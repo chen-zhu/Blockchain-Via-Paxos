@@ -6,6 +6,9 @@ class blockchain:
     #a list that comtains transaction commits.
     commits = []
 
+    #client connection list. name => connected_socket
+    connections = {} 
+
     def __init__(self, name, id, ip, port): 
         self.name = name
         self.id = id
