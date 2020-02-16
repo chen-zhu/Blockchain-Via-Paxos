@@ -1,0 +1,26 @@
+<connections>
+	<clients>
+
+		<client>
+			<name>A</name>
+			<process_id>1</process_id>
+			<ip>127.0.0.1</ip>
+			<port>50000</port>
+		</client>
+
+		<client>
+			<name>B</name>
+			<process_id>2</process_id>
+			<ip>127.0.0.1</ip>
+			<port>50001</port>
+		</client>
+
+		<client>
+			<name>C</name>
+			<process_id>3</process_id>
+			<ip>127.0.0.1</ip>
+			<port>50002</port>
+		</client>
+
+	</clients>	
+</connections>
