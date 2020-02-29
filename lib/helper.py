@@ -1,4 +1,13 @@
 import xml.etree.ElementTree as ET
+import socket
+import sys
+import json
+import copy
+import random
+import string
+import time
+import copy
+import threading
 
 
 def list_clients(): 
@@ -16,6 +25,17 @@ def to_client_exist(to_name):
 		if c['name'] == to_name: 
 			return True
 	return False
+
+def wait_for_recovery(listen_socket, connections):
+	while (1):
+		time.sleep(1)
+		conn, c_address = listen_socket.accept()
+		data = conn.recv(1024)
+		connections[data] = conn
+		print("[SOCKET]: Client " + data + " is online again.")
+		print(connections)
+		return conn
+
 
 
 

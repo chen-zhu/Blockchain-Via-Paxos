@@ -28,6 +28,12 @@ bc = blockchain.blockchain(sys.argv[3], sys.argv[2], sys.argv[4], sys.argv[1])
 #initialize connections
 bc.go_online()
 
+#create threads to listen!
+bc.run_socket_threads()
+
+
+
+
 
 while True:
 	text = raw_input("")
