@@ -34,10 +34,10 @@ genesis = []
 commits = []
 #client connection list. name => connected_socket
 connections = {} 
+
 #paxos config info
 request_num = 0
 BallotNum = 0
-leader_election_vote = 0
 acc_num = 0 #accepted request num --> request_num * 10 + id!
 acc_val = 0 #accepted request value
 
@@ -45,6 +45,8 @@ acc_val = 0 #accepted request value
 receive_ack = []
 initial_val = ""
 receive_accpeted = []
+
+paxos_runing_flag = 0
 
 #initialize connections
 for c_info in clients: 
@@ -72,8 +74,11 @@ while (len(connections) < len(clients) - 1 ):
 	data = conn.recv(1024)
 	connections[data] = conn
 print(connections)
-
+#whenever this client starts, it load snapshot! 
+load_snapshot(genesis, commits, client_name)
 print("\n\n")
+
+#print(commits)
 
 #*********************BlockcChain Main Body Function************************
 def broadcast(json):
@@ -89,8 +94,8 @@ def check_balance():
 	global genesis, commits
 	global client_name
 	#calculate aggregated list
-	for commits in genesis:
-		for trx in commits: 
+	for commits_block in genesis:
+		for trx in commits_block: 
 			if trx['from'] == client_name:
 				initial_balance -= int(trx['amt'])
 			elif trx['to'] == client_name: 
@@ -107,22 +112,39 @@ def print_blockchain():
 	global genesis, commits
 	global client_name
 	global request_num
-	print("Current Request Number: " + str(request_num))
-	print("Genesis/Blockchain List: ")
+	
+	print("--------GENESIS--------")
 	for block in genesis:
-		print(u'\u25bc') 
+		print(u'|         \u25bc           |') 
 		for trx in block: 
-			print("From " + trx['from'] + " To " + trx['to'] + " Amt: " + str(trx['amt']))
+			print_str = "| From " + trx['from'] + " To " + trx['to'] + " Amt: " + str(trx['amt'])
+			if len(str(trx['amt'])) >= 2: 
+				print_str += " |"
+			else: 
+				print_str += "  |"
+			print(print_str)
+		print("-----------------------")
 
-	print(" >>> Local Logs List:" + u'\u25bc')
+	print("\n\n-----LOCAL-COMMITS-----")
+	print(u'|         \u25bc           |') 
 	for trx in commits: 
-		print("From " + trx['from'] + " To " + trx['to'] + " Amt: " + str(trx['amt']))
-
+		print_str = "| From " + trx['from'] + " To " + trx['to'] + " Amt: " + str(trx['amt'])
+		if len(str(trx['amt'])) >= 2: 
+			print_str += " |"
+		else: 
+			print_str += "  |"
+		print(print_str)
+	print("-----------------------")
+	balance = check_balance()
+	print(">>> Current Request <NUMBER>: " + str(request_num))
+	print(">>> Current Client <BALANCE>: " + str(balance))
 
 
 def prepare():
-	global request_num, client_id, BallotNum, initial_val, commits
-	print('[debug] >>> prepare')
+	global request_num, client_id, BallotNum, initial_val, commits, client_name, paxos_runing_flag, lock
+	#print('[debug] >>> prepare')
+	lock.acquire()
+	paxos_runing_flag = 1
 	request_num += 1
 	BallotNum = request_num * 10 + int(client_id)
 	msg_body = {
@@ -131,18 +153,25 @@ def prepare():
 		"owner_id": client_id, 
 		"BallotNum": BallotNum, 
 	}
-	initial_val = json.dumps(commits)
+	lock.release()
+	#pass in leader name here~ 
+	#initial_val = json.dumps(commit
+	initial_val = client_name
+	time.sleep(5)
 	broadcast(json.dumps(msg_body))
+
+
 
 #client receive prepare and try to promise
 def promise(received, via_socket): 
 	global genesis,commits
 	global request_num, client_id, BallotNum
-	global acc_num, acc_val
+	global acc_num, acc_val, lock
 
 	#print('[DEBUG] >>> Send Ack')
 
 	if received["BallotNum"] >= BallotNum:
+		lock.acquire()
 		request_num = received["request_num"]
 		BallotNum = received["BallotNum"]
 		msg_body = {
@@ -152,15 +181,22 @@ def promise(received, via_socket):
 			"acc_num": acc_num, 
 			"acc_val": acc_val,
 		}
+		lock.release()
 		via_socket.sendall(json.dumps(msg_body))
 	else: 
-		print("received smaller BallotNum. Do nothing.") 
+		msg_body = {
+			"type": "Rej",
+			"request_num": request_num,
+			"BallotNum": BallotNum,
+		}
+		via_socket.sendall(json.dumps(msg_body))
+		#print("received smaller BallotNum. Do nothing.") 
 
 #Leader: after receive ack, process and send accept if necessary~
 #received from Majority!
 def accept(): 
-	global receive_ack, initial_val, request_num, BallotNum
-	print('[debug] >>> accept')
+	global receive_ack, initial_val, request_num, BallotNum, lock
+	#print('[debug] >>> accept')
 	myVal = ""
 
 	vals = []
@@ -176,6 +212,7 @@ def accept():
 			highest_req_num = ack["BallotNum"]
 			send_req_num = ack["request_num"]
 
+	lock.acquire()
 	if len(vals) == 0: 
 		myVal = initial_val
 		send_req_num = request_num
@@ -188,6 +225,9 @@ def accept():
 		"BallotNum": BallotNum,
 		"value": myVal
 	}
+	lock.release()
+	#print(myVal)
+	print("[ACCEPT] >>> Final Leader Chosen: " + myVal)
 
 	broadcast(json.dumps(msg_body))
 
@@ -195,84 +235,120 @@ def accept():
 def accepted(received, via_socket):
 	global request_num, client_id, BallotNum
 	global acc_num, acc_val
-	global commits
+	global commits, lock
 
-	print('[debug] >>> accepted')
+	#print('[debug] >>> accepted')
 
 	if (received["BallotNum"] >= BallotNum): 
+		lock.acquire()
 		acc_num = received["BallotNum"]
 		acc_val = received["value"]
+		#print("Dump Accepted: ")
+		#print(commits)
 		msg_body = {
 			"type": "accepted", 
 			"BallotNum": received["BallotNum"],
 			"original_prop_value": received["value"], 
 			"value": json.dumps(commits)
 		}
+		lock.release()
 		via_socket.sendall(json.dumps(msg_body))
 
 #Leader after receive accpeted msg from majority, 
 #commit action in place.
 def commit():
-	global receive_accpeted
-	global genesis, commits
+	global receive_accpeted, client_name
+	global genesis, commits, acc_val, paxos_runing_flag, BallotNum, lock
+
+	#only commit if the original value (leader name) is itself!
 
 	block = []
 	#1. add everything to blockchain
+	lock.acquire()
 	for b in receive_accpeted: 
 		trx_array = json.loads(b["value"])
+		#print("Transactgion array~")
+		#print(trx_array)
 		for trx in trx_array: 
 			block.append(trx)
 
 	for trx in commits:
 		block.append(trx)
+	
+	if len(block) > 0:
+		genesis.append(block)
+		take_snapshot(genesis, commits, client_name)
 
-	genesis.append(block)
 	commits = []
+	acc_val = 0
 
 	msg_body = {
 		"type": "commit",
+		"BallotNum": BallotNum,
 		"transactions": json.dumps(block)
 	}
+	lock.release()
+	
+	initial_val = ""
 	broadcast(json.dumps(msg_body))
-	#anything else goes here?
+
+	#TODO: Compare original data?
+	paxos_runing_flag = 0
+
 
 def process_commit(received):
-	global receive_accpeted
-	global genesis, commits
+	global receive_accpeted, client_name
+	global genesis, commits, acc_val, lock, paxos_runing_flag
 
+	lock.acquire()
 	transactions = json.loads(received["transactions"])
-	genesis.append(transactions)
+	if len(transactions) > 0:
+		genesis.append(transactions)
+		take_snapshot(genesis, commits, client_name)
 	commits = []
+	acc_val = 0
+	paxos_runing_flag = 0
+	lock.release()
 
 
 def paxos_call():
-	print('[debug] >>> Paxos starts.')
+	print('[INFO] >>> Paxos Running.')
 	prepare()
 
 def majority_reached(type, received): 
-	global hard_code_majority, receive_ack, receive_accpeted
+	global hard_code_majority, receive_ack, receive_accpeted, client_name, lock
 
 	if type == "promise": 
+		lock.acquire()
 		receive_ack.append(received)
+		lock.release()
 		#Yeahhh majority goes here!
 		if len(receive_ack) >= hard_code_majority: 
 			return True
 		else: 
 			return False
 	elif type == "accepted":
-		receive_accpeted.append(received)
+		#only append to accept IFF the originla value(leader) is itself!
+		if(received["original_prop_value"] == client_name): 
+			lock.acquire()
+			receive_accpeted.append(received)
+			lock.release()
 		if len(receive_accpeted) >= hard_code_majority: 
 			return True
 		else: 
 			return False
 
 def process_received_msg(received_json, from_socket):
-	global connections, BallotNum, receive_ack, receive_accpeted
-
+	global connections, BallotNum, receive_ack, receive_accpeted, request_num, paxos_runing_flag, lock
+	#print("process received msg:" + received_json)
 	received = json.loads(received_json)
 	type = received["type"]
 	from_client = connections.keys()[connections.values().index(from_socket)]
-	print("[DEBUG LOG] >>> " + type + " From [" + from_client + "]: " + received_json)
+	#print("[DEBUG LOG] >>> " + type + " From [" + from_client + "]: " + received_json)
+	#make it print like normal... add lock here...
+	lock.acquire()
+	print("[DEBUG LOG] >>> " + type + " From [" + from_client + "] BallotNum: " + str(received.get("BallotNum")))
+	lock.release()
 
 	if type == "prepare": #client receive prepare! 
 		promise(received, from_socket)
@@ -282,40 +358,55 @@ def process_received_msg(received_json, from_socket):
 		if majority_reached(type, received):
 			print("Majority Ack received. Processing ACK messages...")
 			accept()
+			lock.acquire()
 			receive_ack = [] #reset receive_ack~
+			lock.release()
 	elif type == "accept": #client receive accept from leader
 		accepted(received, from_socket)
 	elif type == "accepted": #leader receive accepted from majority clients
 		if majority_reached(type, received):
 			print("Majority Accepted received. Processing Accepted messages...")
 			commit()
+			lock.acquire()
 			receive_accpeted = []
+			lock.release()
 	elif type == "commit": #client receive commit from leader~
 		process_commit(received)
+	elif type == "Rej": 
+		lock.acquire()
+		request_num = received["request_num"]
+		#paxos_runing_flag = 0
+		lock.release()
+		print("Rejection/Ignore Detected: A larger BallotNum has been promissed by the client " + from_client)
 	else: 
-		print("Unknown response received.")
+		print("")
 
 
 def socket_keep_receiving(listen_socket, from_client):
 	global passive_socket
-	global connections
-	
+	global connections, hard_code_majority
+	listen_socket.setblocking(0)
+
 	while True:
-		listen_socket.setblocking(0)
-		time.sleep(1)
 		try:
+			time.sleep(1)
 			data = listen_socket.sendall("HeartBeat")
 			data = listen_socket.recv(1024 * 10)
-			if len(data)>0 and "HeartBeat" not in data: 
-				#print("received. " + data)
+			data = data.replace("HeartBeat", "")
+			if len(data)>0 and not data == "": 
 				new_json = data.replace("}{", "}-----{") 
 				split_list = new_json.split("-----")
 				for sl in split_list:
 					process_received_msg(sl, listen_socket)
+			
 		except socket_error as e:
 			if e.errno == 54 or e.errno == 32:
-				print("[SOCKET] client " + from_client + " is currently offline!")
+				hard_code_majority -= 1
+				print("[SOCKET] client " + from_client + " is currently offline! Majority Count Changed To: " + str(hard_code_majority))
+				useless = connections.pop(from_client)
 				listen_socket = wait_for_recovery(passive_socket, connections)
+				hard_code_majority += 1
+				listen_socket.setblocking(0)
 
 #create threads for each connected socket so that it keeps receiving message.
 for name, socket in connections.iteritems():
@@ -342,19 +433,29 @@ while True:
 		balance = check_balance()
 		if balance >= int(split[1]):
 			commits.append({"from":client_name, "to":split[0], "amt":int(split[1])})
+			print("[TRX]: Transaction Succeeded")
+			take_snapshot(genesis, commits, client_name)
 		else:
 			paxos_call()
-			#TODO: figure out a way to wait until paxos terminates~
+			take_snapshot(genesis, commits, client_name)
+			for i in range(200): 
+				if paxos_runing_flag == 0: 
+					#print("Flag resumed.")
+					break
+				else: 
+					time.sleep(0.5)
+			balance = check_balance()
 			if balance >= int(split[1]):
 				commits.append({"from":client_name, "to":split[0], "amt":int(split[1])})
+				print("[TRX]: Transaction Succeeded")
+				take_snapshot(genesis, commits, client_name)
 			else: 
 				print("Inefficient balance detected.")
 
 	elif split[0] == 'balance':
 		balance = check_balance()
 		print("Current Client Balance: " + str(balance))
-
-	elif split[0] == 'debug':	
+	elif split[0] == 'debug' or split[0] == 'check':	
 		print_blockchain()
 	else: 
 		print("Invalid Input.\n")

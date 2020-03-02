@@ -31,7 +31,8 @@ bc.go_online()
 #create threads to listen!
 bc.run_socket_threads()
 
-
+##############################
+#Abandoned solution! 
 
 
 

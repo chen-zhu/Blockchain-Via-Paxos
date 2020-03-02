@@ -3,6 +3,9 @@ import time
 import os
 import xml.etree.ElementTree as ET
 from random import randint
+from lib.helper import *
+
+snapshot_reset()
 
 tree = ET.parse('config/clients.xml')
 root = tree.getroot()
