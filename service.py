@@ -155,7 +155,7 @@ def prepare():
 	}
 	lock.release()
 	#pass in leader name here~ 
-	#initial_val = json.dumps(commit
+	#initial_val = json.dumps(commit)
 	initial_val = client_name
 	time.sleep(5)
 	broadcast(json.dumps(msg_body))
@@ -185,7 +185,7 @@ def promise(received, via_socket):
 		via_socket.sendall(json.dumps(msg_body))
 	else: 
 		msg_body = {
-			"type": "Rej",
+			"type": "rej",
 			"request_num": request_num,
 			"BallotNum": BallotNum,
 		}
@@ -339,16 +339,17 @@ def majority_reached(type, received):
 			return False
 
 def process_received_msg(received_json, from_socket):
-	global connections, BallotNum, receive_ack, receive_accpeted, request_num, paxos_runing_flag, lock
+	global connections, BallotNum, receive_ack, receive_accpeted, request_num, paxos_runing_flag, lock, genesis
 	#print("process received msg:" + received_json)
 	received = json.loads(received_json)
 	type = received["type"]
 	from_client = connections.keys()[connections.values().index(from_socket)]
 	#print("[DEBUG LOG] >>> " + type + " From [" + from_client + "]: " + received_json)
 	#make it print like normal... add lock here...
-	lock.acquire()
-	print("[DEBUG LOG] >>> " + type + " From [" + from_client + "] BallotNum: " + str(received.get("BallotNum")))
-	lock.release()
+	if not type == "recover": 
+		lock.acquire()
+		print("[DEBUG LOG] >>> " + type + " From [" + from_client + "] BallotNum: " + str(received.get("BallotNum")))
+		lock.release()
 
 	if type == "prepare": #client receive prepare! 
 		promise(received, from_socket)
@@ -356,7 +357,7 @@ def process_received_msg(received_json, from_socket):
 		#Majority involved!
 		#wait until receive_ack is fulfilled!
 		if majority_reached(type, received):
-			print("Majority Ack received. Processing ACK messages...")
+			print("[DEBUG LOG] >>> Majority Reached. Processing 'Promise' messages...")
 			accept()
 			lock.acquire()
 			receive_ack = [] #reset receive_ack~
@@ -365,21 +366,47 @@ def process_received_msg(received_json, from_socket):
 		accepted(received, from_socket)
 	elif type == "accepted": #leader receive accepted from majority clients
 		if majority_reached(type, received):
-			print("Majority Accepted received. Processing Accepted messages...")
+			print("[DEBUG LOG] >>> Majority Reached. Processing 'Accepted' messages...")
 			commit()
 			lock.acquire()
 			receive_accpeted = []
 			lock.release()
 	elif type == "commit": #client receive commit from leader~
 		process_commit(received)
-	elif type == "Rej": 
+	elif type == "rej": 
 		lock.acquire()
 		request_num = received["request_num"]
 		#paxos_runing_flag = 0
 		lock.release()
-		print("[DEBUG LOG] >>> REJ detected. BallotNum is smaller than " + from_client + " promissed. ")
+		print("[DEBUG LOG] >>> REJ detected. Prepared Value/BallotNum has been ignored by " + from_client + ".")
+	elif type == "recover": 
+		#when this client re-connect, it will receive recover msg from existing client and compare blockchain. 
+		lock.acquire()
+		#1. update local request_num first
+		request_num = received["request_num"]
+
+		#2. compare genesis and insert the missing block~
+		if not len(genesis) == len(received["genesis"]): 
+			#TODO: Verify received genesis!
+			#DO not directly insert json decoded obj into the array!
+			genesis = []
+			for blc in received["genesis"]: 
+				block = []
+				for cmt in blc:
+					block.append({"from": str(cmt["from"]), "to": str(cmt["to"]), "amt": str(cmt["amt"])})
+				genesis.append(block)
+		lock.release()
 	else: 
 		print("")
+
+def recovering(listen_socket, name): 
+	global genesis, request_num
+	msg_body = {
+		"type": "recover",
+		"request_num": request_num,
+		"genesis": genesis
+	}
+	listen_socket.sendall(json.dumps(msg_body))
 
 
 def socket_keep_receiving(listen_socket, from_client):
@@ -407,6 +434,10 @@ def socket_keep_receiving(listen_socket, from_client):
 				listen_socket = wait_for_recovery(passive_socket, connections)
 				hard_code_majority += 1
 				listen_socket.setblocking(0)
+				#then push my blockchain info to this client.
+				recovering(listen_socket, from_client)
+
+
 
 #create threads for each connected socket so that it keeps receiving message.
 for name, socket in connections.iteritems():
