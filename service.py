@@ -377,7 +377,7 @@ def process_received_msg(received_json, from_socket):
 		request_num = received["request_num"]
 		#paxos_runing_flag = 0
 		lock.release()
-		print("Rejection/Ignore Detected: A larger BallotNum has been promissed by the client " + from_client)
+		print("[DEBUG LOG] >>> REJ detected. BallotNum is smaller than " + from_client + " promissed. ")
 	else: 
 		print("")
 
