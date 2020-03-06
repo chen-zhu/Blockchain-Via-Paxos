@@ -196,7 +196,6 @@ def promise(received, via_socket):
 #received from Majority!
 def accept(): 
 	global receive_ack, initial_val, request_num, BallotNum, lock
-	#print('[debug] >>> accept')
 	myVal = ""
 
 	vals = []
@@ -226,9 +225,7 @@ def accept():
 		"value": myVal
 	}
 	lock.release()
-	#print(myVal)
 	print("[ACCEPT] >>> Final Leader Chosen: " + myVal)
-
 	broadcast(json.dumps(msg_body))
 
 #Client received accept from the leader~
@@ -237,14 +234,10 @@ def accepted(received, via_socket):
 	global acc_num, acc_val
 	global commits, lock
 
-	#print('[debug] >>> accepted')
-
 	if (received["BallotNum"] >= BallotNum): 
 		lock.acquire()
 		acc_num = received["BallotNum"]
 		acc_val = received["value"]
-		#print("Dump Accepted: ")
-		#print(commits)
 		msg_body = {
 			"type": "accepted", 
 			"BallotNum": received["BallotNum"],
@@ -260,15 +253,11 @@ def commit():
 	global receive_accpeted, client_name
 	global genesis, commits, acc_val, paxos_runing_flag, BallotNum, lock
 
-	#only commit if the original value (leader name) is itself!
-
 	block = []
 	#1. add everything to blockchain
 	lock.acquire()
 	for b in receive_accpeted: 
 		trx_array = json.loads(b["value"])
-		#print("Transactgion array~")
-		#print(trx_array)
 		for trx in trx_array: 
 			block.append(trx)
 
@@ -277,10 +266,10 @@ def commit():
 	
 	if len(block) > 0:
 		genesis.append(block)
-		take_snapshot(genesis, commits, client_name)
-
+		
 	commits = []
 	acc_val = 0
+	take_snapshot(genesis, commits, client_name)
 
 	msg_body = {
 		"type": "commit",
@@ -292,7 +281,6 @@ def commit():
 	initial_val = ""
 	broadcast(json.dumps(msg_body))
 
-	#TODO: Compare original data?
 	paxos_runing_flag = 0
 
 
@@ -304,8 +292,8 @@ def process_commit(received):
 	transactions = json.loads(received["transactions"])
 	if len(transactions) > 0:
 		genesis.append(transactions)
-		take_snapshot(genesis, commits, client_name)
 	commits = []
+	take_snapshot(genesis, commits, client_name)
 	acc_val = 0
 	paxos_runing_flag = 0
 	lock.release()
@@ -315,24 +303,28 @@ def paxos_call():
 	print('[INFO] >>> Paxos Running.')
 	prepare()
 
-def majority_reached(type, received): 
+def request_insert(type, received): 
 	global hard_code_majority, receive_ack, receive_accpeted, client_name, lock
 
 	if type == "promise": 
 		lock.acquire()
 		receive_ack.append(received)
 		lock.release()
-		#Yeahhh majority goes here!
-		if len(receive_ack) >= hard_code_majority: 
-			return True
-		else: 
-			return False
 	elif type == "accepted":
 		#only append to accept IFF the originla value(leader) is itself!
 		if(received["original_prop_value"] == client_name): 
 			lock.acquire()
 			receive_accpeted.append(received)
 			lock.release()
+
+def majority_trigger(type):
+	global hard_code_majority, receive_ack, receive_accpeted, client_name, lock
+	if type == "promise": 
+		if len(receive_ack) >= hard_code_majority: 
+			return True
+		else: 
+			return False
+	elif type == "accepted": 
 		if len(receive_accpeted) >= hard_code_majority: 
 			return True
 		else: 
@@ -340,11 +332,9 @@ def majority_reached(type, received):
 
 def process_received_msg(received_json, from_socket):
 	global connections, BallotNum, receive_ack, receive_accpeted, request_num, paxos_runing_flag, lock, genesis
-	#print("process received msg:" + received_json)
 	received = json.loads(received_json)
 	type = received["type"]
 	from_client = connections.keys()[connections.values().index(from_socket)]
-	#print("[DEBUG LOG] >>> " + type + " From [" + from_client + "]: " + received_json)
 	#make it print like normal... add lock here...
 	if not type == "recover": 
 		lock.acquire()
@@ -354,9 +344,8 @@ def process_received_msg(received_json, from_socket):
 	if type == "prepare": #client receive prepare! 
 		promise(received, from_socket)
 	elif type == "promise": #leader receive ack from majority clients
-		#Majority involved!
-		#wait until receive_ack is fulfilled!
-		if majority_reached(type, received):
+		request_insert(type, received)
+		if majority_trigger(type):
 			print("[DEBUG LOG] >>> Majority Reached. Processing 'Promise' messages...")
 			accept()
 			lock.acquire()
@@ -365,7 +354,8 @@ def process_received_msg(received_json, from_socket):
 	elif type == "accept": #client receive accept from leader
 		accepted(received, from_socket)
 	elif type == "accepted": #leader receive accepted from majority clients
-		if majority_reached(type, received):
+		request_insert(type, received)
+		if majority_trigger(type):
 			print("[DEBUG LOG] >>> Majority Reached. Processing 'Accepted' messages...")
 			commit()
 			lock.acquire()
@@ -376,7 +366,6 @@ def process_received_msg(received_json, from_socket):
 	elif type == "rej": 
 		lock.acquire()
 		request_num = received["request_num"]
-		#paxos_runing_flag = 0
 		lock.release()
 		print("[DEBUG LOG] >>> REJ detected. Prepared Value/BallotNum has been ignored by " + from_client + ".")
 	elif type == "recover": 
@@ -386,15 +375,23 @@ def process_received_msg(received_json, from_socket):
 		request_num = received["request_num"]
 
 		#2. compare genesis and insert the missing block~
-		if not len(genesis) == len(received["genesis"]): 
-			#TODO: Verify received genesis!
-			#DO not directly insert json decoded obj into the array!
-			genesis = []
-			for blc in received["genesis"]: 
-				block = []
-				for cmt in blc:
-					block.append({"from": str(cmt["from"]), "to": str(cmt["to"]), "amt": str(cmt["amt"])})
-				genesis.append(block)
+		tmp_genesis = []
+		for blc in received["genesis"]: 
+			block = []
+			for cmt in blc:
+				block.append({"from": str(cmt["from"]), "to": str(cmt["to"]), "amt": str(cmt["amt"])})
+			tmp_genesis.append(block)
+			block = []
+
+		#validate received genesis --> make sure that all my existing genesis exist in received. OW, put it on 
+		#local commit.
+		for check_blk in genesis: 
+			#if one block is not in other's, then add it to local log and paxos again.
+			if not check_blk in tmp_genesis: 
+				for check_cmt in check_blk: 
+					commits.append(check_cmt)
+
+		genesis = tmp_genesis
 		lock.release()
 	else: 
 		print("")
@@ -411,7 +408,7 @@ def recovering(listen_socket, name):
 
 def socket_keep_receiving(listen_socket, from_client):
 	global passive_socket
-	global connections, hard_code_majority
+	global connections, hard_code_majority, lock, receive_ack, receive_accpeted
 	listen_socket.setblocking(0)
 
 	while True:
@@ -430,6 +427,19 @@ def socket_keep_receiving(listen_socket, from_client):
 			if e.errno == 54 or e.errno == 32:
 				hard_code_majority -= 1
 				print("[SOCKET] client " + from_client + " is currently offline! Majority Count Changed To: " + str(hard_code_majority))
+				#sooo messy here......if client is down, majority changes --> retrigger actions
+				if majority_trigger("promise"):
+					accept()
+					lock.acquire()
+					receive_ack = [] #reset receive_ack~
+					lock.release()
+
+				if majority_trigger("accepted"):
+					commit()
+					lock.acquire()
+					receive_accpeted = []
+					lock.release()
+
 				useless = connections.pop(from_client)
 				listen_socket = wait_for_recovery(passive_socket, connections)
 				hard_code_majority += 1
@@ -438,12 +448,10 @@ def socket_keep_receiving(listen_socket, from_client):
 				recovering(listen_socket, from_client)
 
 
-
 #create threads for each connected socket so that it keeps receiving message.
 for name, socket in connections.iteritems():
 	listen_thread = threading.Thread(target=socket_keep_receiving, args=(socket, name, ))
 	listen_thread.start()
-
 
 while True:
 	text = raw_input("")
@@ -471,7 +479,6 @@ while True:
 			take_snapshot(genesis, commits, client_name)
 			for i in range(200): 
 				if paxos_runing_flag == 0: 
-					#print("Flag resumed.")
 					break
 				else: 
 					time.sleep(0.5)
@@ -483,10 +490,10 @@ while True:
 			else: 
 				print("Inefficient balance detected.")
 
-	elif split[0] == 'balance':
+	elif split[0] == 'balance' or split[0] == 'PrintBalance':
 		balance = check_balance()
 		print("Current Client Balance: " + str(balance))
-	elif split[0] == 'debug' or split[0] == 'check':	
+	elif split[0] == 'debug' or split[0] == 'check' or split[0] == 'PrintLog' or split[0] == 'PrintBlockchain':	
 		print_blockchain()
 	else: 
 		print("Invalid Input.\n")
