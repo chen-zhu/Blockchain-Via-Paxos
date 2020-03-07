@@ -405,7 +405,6 @@ def recovering(listen_socket, name):
 	}
 	listen_socket.sendall(json.dumps(msg_body))
 
-
 def socket_keep_receiving(listen_socket, from_client):
 	global passive_socket
 	global connections, hard_code_majority, lock, receive_ack, receive_accpeted
@@ -427,7 +426,9 @@ def socket_keep_receiving(listen_socket, from_client):
 			if e.errno == 54 or e.errno == 32:
 				hard_code_majority -= 1
 				print("[SOCKET] client " + from_client + " is currently offline! Majority Count Changed To: " + str(hard_code_majority))
-				#sooo messy here......if client is down, majority changes --> retrigger actions
+				useless = connections.pop(from_client)
+
+				#sooo messy here......if client is down, majority changes --> retrigger actions	
 				if majority_trigger("promise"):
 					accept()
 					lock.acquire()
@@ -440,7 +441,6 @@ def socket_keep_receiving(listen_socket, from_client):
 					receive_accpeted = []
 					lock.release()
 
-				useless = connections.pop(from_client)
 				listen_socket = wait_for_recovery(passive_socket, connections)
 				hard_code_majority += 1
 				listen_socket.setblocking(0)
@@ -488,7 +488,7 @@ while True:
 				print("[TRX]: Transaction Succeeded")
 				take_snapshot(genesis, commits, client_name)
 			else: 
-				print("Inefficient balance detected.")
+				print("No enough balance detected.")
 
 	elif split[0] == 'balance' or split[0] == 'PrintBalance':
 		balance = check_balance()
