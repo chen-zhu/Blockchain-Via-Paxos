@@ -58,19 +58,28 @@ def load_snapshot(genesis, commits, client_name):
 		file_name = "seed/snapshot-" + client_name
 		print("[SOCKET] Server Resume Detected. Loading Snapshot... ")
 	
-	f = open(file_name, "r")
-	raw = f.read()
-	if len(raw) > 0: 
-		data = json.loads(raw)
-		for cmt in data["commits"]:
-			commits.append({"from": str(cmt["from"]), "to": str(cmt["to"]), "amt": str(cmt["amt"])})
-		for blc in data["genesis"]: 
-			block = []
-			for cmt in blc:
-				block.append({"from": str(cmt["from"]), "to": str(cmt["to"]), "amt": str(cmt["amt"])})
-			genesis.append(block)
-
-
+	if os.path.exists(file_name): 
+		f = open(file_name, "r")
+		raw = f.read()
+		if len(raw) > 0: 
+			data = json.loads(raw)
+			for cmt in data["commits"]:
+				commits.append({
+					"from": str(cmt["from"]), 
+					"to": str(cmt["to"]), 
+					"amt": str(cmt["amt"]), 
+					"id": str(cmt["id"])
+					})
+			for blc in data["genesis"]: 
+				block = []
+				for cmt in blc:
+					block.append({
+						"from": str(cmt["from"]), 
+						"to": str(cmt["to"]), 
+						"amt": str(cmt["amt"]), 
+						"id": str(cmt["id"])
+						})
+				genesis.append(block)
 
 def snapshot_reset():
 	if os.path.exists("seed/snapshot-A"):
@@ -80,8 +89,9 @@ def snapshot_reset():
 	if os.path.exists("seed/snapshot-C"):
 		os.remove("seed/snapshot-C")
 
-
-
+def randomId(stringLength=5):
+	letters = string.ascii_lowercase
+	return ''.join(random.choice(letters) for i in range(stringLength))
 
 
 

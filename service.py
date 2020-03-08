@@ -113,28 +113,28 @@ def print_blockchain():
 	global client_name
 	global request_num
 	
-	print("--------GENESIS--------")
+	print("-----------GENESIS-----------")
 	for block in genesis:
-		print(u'|         \u25bc           |') 
+		print(u'|            \u25bc              |') 
 		for trx in block: 
-			print_str = "| From " + trx['from'] + " To " + trx['to'] + " Amt: " + str(trx['amt'])
+			print_str = "| From " + trx['from'] + " To " + trx['to'] + " Amt: " + str(trx['amt']) + " " + str(trx['id'])
 			if len(str(trx['amt'])) >= 2: 
 				print_str += " |"
 			else: 
 				print_str += "  |"
 			print(print_str)
-		print("-----------------------")
+		print("-----------------------------")
 
-	print("\n\n-----LOCAL-COMMITS-----")
-	print(u'|         \u25bc           |') 
+	print("\n\n--------LOCAL-COMMITS--------")
+	print(u'|            \u25bc              |') 
 	for trx in commits: 
-		print_str = "| From " + trx['from'] + " To " + trx['to'] + " Amt: " + str(trx['amt'])
+		print_str = "| From " + trx['from'] + " To " + trx['to'] + " Amt: " + str(trx['amt']) + " " + str(trx['id'])
 		if len(str(trx['amt'])) >= 2: 
 			print_str += " |"
 		else: 
 			print_str += "  |"
 		print(print_str)
-	print("-----------------------")
+	print("-----------------------------")
 	balance = check_balance()
 	print(">>> Current Request <NUMBER>: " + str(request_num))
 	print(">>> Current Client <BALANCE>: " + str(balance))
@@ -331,7 +331,7 @@ def majority_trigger(type):
 			return False
 
 def process_received_msg(received_json, from_socket):
-	global connections, BallotNum, receive_ack, receive_accpeted, request_num, paxos_runing_flag, lock, genesis
+	global connections, BallotNum, receive_ack, receive_accpeted, request_num, paxos_runing_flag, lock, genesis, commits
 	received = json.loads(received_json)
 	type = received["type"]
 	from_client = connections.keys()[connections.values().index(from_socket)]
@@ -376,14 +376,21 @@ def process_received_msg(received_json, from_socket):
 
 		#2. compare genesis and insert the missing block~
 		tmp_genesis = []
+		tmp_ids = []
 		for blc in received["genesis"]: 
 			block = []
 			for cmt in blc:
-				block.append({"from": str(cmt["from"]), "to": str(cmt["to"]), "amt": str(cmt["amt"])})
+				block.append({
+					"from": str(cmt["from"]), 
+					"to": str(cmt["to"]), 
+					"amt": str(cmt["amt"]), 
+					"id": str(cmt["id"])
+					})
+				tmp_ids.append(str(cmt["id"]))
 			tmp_genesis.append(block)
 			block = []
 
-		#validate received genesis --> make sure that all my existing genesis exist in received. OW, put it on 
+		#3. validate received genesis --> make sure that all my existing genesis exist in received. OW, put it on 
 		#local commit.
 		for check_blk in genesis: 
 			#if one block is not in other's, then add it to local log and paxos again.
@@ -391,6 +398,13 @@ def process_received_msg(received_json, from_socket):
 				for check_cmt in check_blk: 
 					commits.append(check_cmt)
 
+		#4. verify local commit: if it exist in genesis, then remove it from local!
+		verify_commits = []
+		for cmt_record in commits: 
+			if not cmt_record["id"] in tmp_ids: 
+				verify_commits.append(cmt_record)
+
+		commits = verify_commits		
 		genesis = tmp_genesis
 		lock.release()
 	else: 
@@ -456,6 +470,7 @@ for name, socket in connections.iteritems():
 while True:
 	text = raw_input("")
 	split = text.split()
+	trx_id = randomId()
 	if len(split) == 0: 
 		continue
 	elif len(split) == 2: 
@@ -471,7 +486,12 @@ while True:
 		
 		balance = check_balance()
 		if balance >= int(split[1]):
-			commits.append({"from":client_name, "to":split[0], "amt":int(split[1])})
+			commits.append({
+				"from":client_name, 
+				"to":split[0], 
+				"amt":int(split[1]), 
+				"id": trx_id
+				})
 			print("[TRX]: Transaction Succeeded")
 			take_snapshot(genesis, commits, client_name)
 		else:
@@ -484,7 +504,12 @@ while True:
 					time.sleep(0.5)
 			balance = check_balance()
 			if balance >= int(split[1]):
-				commits.append({"from":client_name, "to":split[0], "amt":int(split[1])})
+				commits.append({
+					"from":client_name, 
+					"to":split[0], 
+					"amt":int(split[1]), 
+					"id": trx_id
+					})
 				print("[TRX]: Transaction Succeeded")
 				take_snapshot(genesis, commits, client_name)
 			else: 
