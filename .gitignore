@@ -1,0 +1,9 @@
+
+.DS_Store
+*.pyc
+seed/snapshot-B
+seed/snapshot-A
+seed/snapshot-C
+*.pyc
+lib/helper.pyc
+lib/__pycache__/helper.cpython-37.pyc
