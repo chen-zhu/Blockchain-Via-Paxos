@@ -443,13 +443,13 @@ def socket_keep_receiving(listen_socket, from_client):
 				useless = connections.pop(from_client)
 
 				#sooo messy here......if client is down, majority changes --> retrigger actions	
-				if majority_trigger("promise"):
+				if majority_trigger("promise") & len(connections) > 0:
 					accept()
 					lock.acquire()
 					receive_ack = [] #reset receive_ack~
 					lock.release()
 
-				if majority_trigger("accepted"):
+				if majority_trigger("accepted") & len(connections) > 0:
 					commit()
 					lock.acquire()
 					receive_accpeted = []
