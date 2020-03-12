@@ -1,69 +1,44 @@
 {
-  "commits": [
-    {
-      "to": "C",
-      "from": "B",
-      "amt": 4, 
-      "id": "bcbcb"
-    }
-  ],
+  "commits": [],
   "genesis": [
     [
       {
         "to": "B",
-        "from": "C",
-        "amt": 2, 
-        "id": "bbbbb"
-      },
-      {
-        "to": "B",
-        "from": "C",
-        "amt": 6, 
-        "id": "ccccc"
-      },
-      {
-        "to": "A",
-        "from": "B",
-        "amt": 2, 
-        "id": "ddddd"
-      },
-      {
-        "to": "A",
-        "from": "B",
-        "amt": 1, 
-        "id": "eeeee"
-      },
-      {
-        "to": "B",
         "from": "A",
-        "amt": 1, 
-        "id": "fffff"
-      },
-      {
-        "to": "B",
-        "from": "A",
-        "amt": 3, 
-        "id": "ggggg"
+        "amt": 3,
+        "id": "cmkqs"
       },
       {
         "to": "C",
-        "from": "A",
-        "amt": 2, 
-        "id": "hhhhh"
+        "from": "B",
+        "amt": 3,
+        "id": "bazxe"
+      },
+      {
+        "to": "A",
+        "from": "C",
+        "amt": 3,
+        "id": "butoo"
       }
     ],
     [
       {
-        "to": "A",
-        "from": "B",
-        "amt": 5, 
-        "id": "iiiii"
+        "to": "B",
+        "from": "A",
+        "amt": 2,
+        "id": "zvgys"
       },
       {
         "to": "C",
         "from": "B",
-        "amt": 3, 
-        "id": "jjjjj"
+        "amt": 2,
+        "id": "flctp"
+      },
+      {
+        "to": "A",
+        "from": "C",
+        "amt": 2,
+        "id": "bieks"
       }
     ]
   ]
